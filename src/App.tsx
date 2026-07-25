@@ -28,7 +28,36 @@ export function AppContent() {
   const [currentBrief, setCurrentBrief] = useState<ProjectBrief | null>(null);
   const [starredIds, setStarredIds] = useState<string[]>([]);
   const [comparedCandidates, setComparedCandidates] = useState<ValidatedName[]>([]);
-  
+
+  const [genPhase, setGenPhase] = useState<'idle' | 'generating' | 'validating'>('idle');
+  const [genProgress, setGenProgress] = useState(0);
+  const [genTotal, setGenTotal] = useState(0);
+  const [genCurrentName, setGenCurrentName] = useState('');
+  const [genLog, setGenLog] = useState<{ name: string; status: 'checking' | 'passed' | 'collision' | 'error' }[]>([]);
+
+  const genStart = (total: number) => {
+    setGenPhase('generating');
+    setGenProgress(0);
+    setGenTotal(total);
+    setGenCurrentName('');
+    setGenLog([]);
+  };
+  const genNextName = (name: string) => {
+    setGenPhase('validating');
+    setGenCurrentName(name);
+    setGenLog(prev => [...prev, { name, status: 'checking' }]);
+  };
+  const genNameResult = (name: string, status: 'passed' | 'collision' | 'error') => {
+    setGenLog(prev => prev.map(l => l.name === name ? { ...l, status } : l));
+    setGenProgress(prev => prev + 1);
+  };
+  const genDone = () => {
+    setGenPhase('idle');
+    setGenProgress(0);
+    setGenTotal(0);
+    setGenCurrentName('');
+  };
+
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [modalApiKeyInput, setModalApiKeyInput] = useState('');
   const [modalKeySaved, setModalKeySaved] = useState(false);
@@ -56,11 +85,14 @@ export function AppContent() {
     setCurrentTab('running');
 
     try {
+      genStart(40);
       const candidates = await generateCandidates(apiKey, brief, 40);
 
       if (candidates.length === 0) {
         throw new Error('No candidates were generated. Check your Gemini API key and try again.');
       }
+
+      setGenTotal(candidates.length);
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -70,6 +102,7 @@ export function AppContent() {
       const validated: ValidatedName[] = [];
       for (let i = 0; i < candidates.length; i++) {
         const c = candidates[i];
+        genNextName(c.name);
         try {
           const valRes = await fetch('/api/candidates/validate', {
             method: 'POST',
@@ -101,9 +134,12 @@ export function AppContent() {
               status: 'passed',
               validatedAt: new Date().toISOString()
             });
+            genNameResult(c.name, 'passed');
+          } else {
+            genNameResult(c.name, 'collision');
           }
         } catch {
-          // skip individual validation failures
+          genNameResult(c.name, 'error');
         }
       }
 
@@ -112,6 +148,8 @@ export function AppContent() {
       await incrementRuns();
       setValidatedNames(validated);
       setCurrentTab('results');
+
+      genDone();
 
       if (user) {
         try {
@@ -206,6 +244,7 @@ export function AppContent() {
       setShowLimitModal(true);
       return;
     }
+    genStart(20);
     setCurrentTab('running');
     try {
       const brief = currentBrief || {
@@ -226,12 +265,14 @@ export function AppContent() {
       if (similar.length === 0) {
         throw new Error('No similar candidates generated');
       }
+      setGenTotal(similar.length);
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'x-gemini-key': apiKey
       };
       const validated: ValidatedName[] = [];
       for (const c of similar) {
+        genNextName(c.name);
         try {
           const valRes = await fetch('/api/candidates/validate', {
             method: 'POST',
@@ -258,15 +299,22 @@ export function AppContent() {
               status: 'passed',
               validatedAt: new Date().toISOString()
             });
+            genNameResult(c.name, 'passed');
+          } else {
+            genNameResult(c.name, 'collision');
           }
-        } catch { }
+        } catch {
+          genNameResult(c.name, 'error');
+        }
       }
       validated.sort((a, b) => b.finalScore - a.finalScore);
       setValidatedNames(validated);
       setCurrentTab('results');
+      genDone();
     } catch (e) {
       console.error(e);
       setCurrentTab('results');
+      genDone();
     }
   };
 
@@ -331,14 +379,78 @@ export function AppContent() {
             )}
 
             {currentTab === 'running' && (
-              <div className="max-w-5xl mx-auto py-20 px-4 text-center space-y-6">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto animate-pulse">
-                  <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                </div>
-                <h3 className="text-lg font-bold text-white">Generating Brand Names</h3>
-                <p className="text-sm text-zinc-400 max-w-md mx-auto">
-                  Using your Gemini API key to brainstorm names and check availability...
-                </p>
+              <div className="max-w-3xl mx-auto py-16 px-4 space-y-8">
+                {/* Phase 1: Generating */}
+                {genPhase === 'generating' && (
+                  <div className="text-center space-y-6">
+                    <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
+                      <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    </div>
+                    <h3 className="text-xl font-bold text-white">Brainstorming Names</h3>
+                    <p className="text-sm text-zinc-400">Using Gemini AI to generate creative brand name ideas...</p>
+                    <div className="w-full max-w-sm mx-auto bg-zinc-900 rounded-full h-2 border border-zinc-800 overflow-hidden">
+                      <div className="bg-emerald-500 h-full rounded-full animate-pulse" style={{ width: '60%' }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Phase 2: Validating */}
+                {genPhase === 'validating' && genTotal > 0 && (
+                  <div className="space-y-6">
+                    <div className="text-center space-y-2">
+                      <h3 className="text-xl font-bold text-white">Validating Names</h3>
+                      <p className="text-sm text-zinc-400">
+                        Checking {genProgress} of {genTotal} names against web search & domain records
+                      </p>
+                      <div className="w-full max-w-sm mx-auto bg-zinc-900 rounded-full h-2.5 border border-zinc-800 overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${(genProgress / genTotal) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Currently checking */}
+                    <div className="p-4 rounded-2xl bg-zinc-900/60 border border-zinc-800 text-center space-y-1">
+                      <p className="text-xs text-zinc-500 uppercase tracking-wider">Now Checking</p>
+                      <p className="text-xl font-extrabold text-white">{genCurrentName}</p>
+                      <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-400">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                        <span>DuckDuckGo search · DNS check</span>
+                      </div>
+                    </div>
+
+                    {/* Live log of checked names */}
+                    <div className="space-y-1.5 max-h-80 overflow-y-auto">
+                      {genLog.map((entry, i) => (
+                        <div
+                          key={i}
+                          className={`flex items-center justify-between px-4 py-2 rounded-xl text-sm ${
+                            entry.status === 'checking' ? 'bg-zinc-900/40 border border-zinc-800/60' :
+                            entry.status === 'passed' ? 'bg-emerald-500/5 border border-emerald-500/20' :
+                            entry.status === 'collision' ? 'bg-red-500/5 border border-red-500/20' :
+                            'bg-zinc-900/40 border border-zinc-800/60'
+                          }`}
+                        >
+                          <span className={`font-medium ${entry.status === 'collision' ? 'text-red-400' : entry.status === 'passed' ? 'text-emerald-400' : 'text-zinc-300'}`}>
+                            {entry.name}
+                          </span>
+                          <span className="text-xs font-semibold uppercase tracking-wider">
+                            {entry.status === 'checking' && (
+                              <span className="flex items-center gap-1.5 text-zinc-500">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
+                                Checking
+                              </span>
+                            )}
+                            {entry.status === 'passed' && <span className="text-emerald-500">✓ Available</span>}
+                            {entry.status === 'collision' && <span className="text-red-400">✗ Taken</span>}
+                            {entry.status === 'error' && <span className="text-zinc-500">⚠ Error</span>}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
