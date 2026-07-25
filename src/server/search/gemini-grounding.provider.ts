@@ -3,7 +3,7 @@ import { SearchProvider } from './search-provider.interface';
 import { ExactSearchResult, SearchCheckResult, EvidenceItem } from '../../types';
 
 export class GeminiGroundingSearchProvider implements SearchProvider {
-  name = 'Gemini Google Search Grounding';
+  name = 'Gemini Knowledge + DNS';
   private ai: GoogleGenAI | null = null;
 
   constructor(userApiKey?: string) {
@@ -17,7 +17,7 @@ export class GeminiGroundingSearchProvider implements SearchProvider {
   }
 
   async exactSearch(candidateName: string, strictnessMode: 'extreme' | 'commercial' = 'extreme'): Promise<ExactSearchResult> {
-    const query = `"${candidateName}"`;
+    const query = `"${candidateName}" brand check`;
     if (!this.ai) {
       return {
         hasCollision: false,
@@ -32,83 +32,60 @@ export class GeminiGroundingSearchProvider implements SearchProvider {
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-3.6-flash',
-        contents: `Search the web for the exact brand/product name "${candidateName}" and tell me if it is currently used by any company, product, software, app, organization, or online entity anywhere in the world.
+        contents: `You are a brand collision detector. Your job is to identify if the name "${candidateName}" is already used by any real company, product, software, app, organization, or online entity.
 
-First use Google Search to find ALL results. Then analyze what you found.
+Think carefully. Check the name against everything you know from your training data. Be thorough — search your memory for ALL entities using this exact name, across all industries and countries.
 
-Return ONLY valid JSON with this exact structure (no markdown, no code fences):
+For each entity you find, provide the name, what it does, and a URL (if you know one).
+
+Return ONLY valid JSON with this exact structure — no other text, no markdown:
 {
-  "hasCollision": boolean,
-  "exactMatchCount": number,
-  "summary": "list every entity you found using this name",
-  "evidence": [{"title": "string", "url": "string", "snippet": "string"}]
+  "hasCollision": true,
+  "exactMatchCount": 2,
+  "summary": "List of all known entities using this name",
+  "evidence": [
+    {"title": "Entity name and description", "url": "https://known-url-if-available", "snippet": "What this entity does"}
+  ]
 }
 
-IMPORTANT: In extreme strictness mode, hasCollision must be true if ANY entity anywhere uses this exact name, regardless of industry or geography.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          temperature: 0.1
-        }
+If you find no real entities using this name, return:
+{
+  "hasCollision": false,
+  "exactMatchCount": 0,
+  "summary": "Nothing found",
+  "evidence": []
+}
+
+CRITICAL: hasCollision MUST be true if ANY real company, product, software, app, or organization uses this exact name. Do not guess or make up entities — only use what you know from training.`,
+        config: { temperature: 0 }
       });
 
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const groundingEvidence: EvidenceItem[] = [];
-      for (const chunk of chunks) {
-        if (chunk.web?.uri && chunk.web?.title) {
-          groundingEvidence.push({
-            title: chunk.web.title,
-            url: chunk.web.uri,
-            snippet: `Found via Google Search for "${candidateName}"`
-          });
-        }
-      }
+      const text = response.text?.trim() || '';
+      let hasCollision = false;
+      let exactMatchCount = 0;
+      let evidence: EvidenceItem[] = [];
 
-      let parsedEvidence: EvidenceItem[] = [];
-      let parsedHasCollision = false;
-      let parsedExactMatchCount = 0;
       try {
-        const text = response.text?.trim() || '';
         const jsonStart = text.indexOf('{');
         const jsonEnd = text.lastIndexOf('}');
         if (jsonStart !== -1 && jsonEnd !== -1) {
-          const json = text.slice(jsonStart, jsonEnd + 1);
-          const parsed = JSON.parse(json);
-          parsedEvidence = parsed.evidence || [];
-          parsedHasCollision = Boolean(parsed.hasCollision);
-          parsedExactMatchCount = parsed.exactMatchCount || 0;
+          const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+          hasCollision = Boolean(parsed.hasCollision);
+          exactMatchCount = parsed.exactMatchCount || 0;
+          evidence = parsed.evidence || [];
         }
-      } catch { }
-
-      const combinedEvidence = [...parsedEvidence, ...groundingEvidence];
-      const uniqueEvidenceMap = new Map<string, EvidenceItem>();
-      for (const ev of combinedEvidence) {
-        if (ev.url) uniqueEvidenceMap.set(ev.url, ev);
-      }
-      const uniqueEvidence = Array.from(uniqueEvidenceMap.values());
-
-      const hasGroundingResults = groundingEvidence.length > 0;
-      let hasCollision = parsedHasCollision || hasGroundingResults;
-
-      if (strictnessMode === 'extreme' && uniqueEvidence.length > 0) {
-        const nameLower = candidateName.toLowerCase();
-        const foundExactInTitleOrSnippet = uniqueEvidence.some(e =>
-          e.title.toLowerCase().includes(nameLower) || (e.snippet && e.snippet.toLowerCase().includes(nameLower))
-        );
-        if (foundExactInTitleOrSnippet) {
-          hasCollision = true;
-        }
-      }
+      } catch {}
 
       return {
         hasCollision,
-        exactMatchCount: parsedExactMatchCount || uniqueEvidence.length,
-        totalResults: uniqueEvidence.length,
-        evidence: uniqueEvidence,
+        exactMatchCount,
+        totalResults: evidence.length,
+        evidence,
         provider: this.name,
         query
       };
     } catch (err) {
-      console.error('Gemini search grounding error:', err);
+      console.error('Gemini knowledge check error:', err);
       return {
         hasCollision: false,
         exactMatchCount: 0,
@@ -136,61 +113,40 @@ IMPORTANT: In extreme strictness mode, hasCollision must be true if ANY entity a
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-3.6-flash',
-        contents: `Search the web for "${candidateName}" in the context of "${context}".
-Use Google Search to find if "${candidateName}" is used as a ${context} or brand.
+        contents: `Is the name "${candidateName}" used by any real ${context} or brand? Search your training knowledge.
 
-Return ONLY valid JSON (no markdown, no code fences):
+Return ONLY this JSON structure:
 {
-  "hasCollision": boolean,
+  "hasCollision": true/false,
   "totalResults": number,
-  "summary": "what entities were found",
+  "summary": "what was found",
   "evidence": [{"title": "string", "url": "string", "snippet": "string"}]
-}`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          temperature: 0.1
-        }
+}
+
+hasCollision = true if any real ${context} entity uses this exact name.`,
+        config: { temperature: 0 }
       });
 
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const groundingEvidence: EvidenceItem[] = [];
-      for (const chunk of chunks) {
-        if (chunk.web?.uri && chunk.web?.title) {
-          groundingEvidence.push({
-            title: chunk.web.title,
-            url: chunk.web.uri,
-            snippet: `Contextual check for "${candidateName}" ${context}`
-          });
-        }
-      }
+      const text = response.text?.trim() || '';
+      let hasCollision = false;
+      let totalResults = 0;
+      let evidence: EvidenceItem[] = [];
 
-      let parsedHasCollision = false;
-      let parsedTotalResults = 0;
-      let parsedEvidence: EvidenceItem[] = [];
       try {
-        const text = response.text?.trim() || '';
         const jsonStart = text.indexOf('{');
         const jsonEnd = text.lastIndexOf('}');
         if (jsonStart !== -1 && jsonEnd !== -1) {
-          const json = text.slice(jsonStart, jsonEnd + 1);
-          const parsed = JSON.parse(json);
-          parsedHasCollision = Boolean(parsed.hasCollision);
-          parsedTotalResults = parsed.totalResults || 0;
-          parsedEvidence = parsed.evidence || [];
+          const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+          hasCollision = Boolean(parsed.hasCollision);
+          totalResults = parsed.totalResults || 0;
+          evidence = parsed.evidence || [];
         }
-      } catch { }
-
-      const combined = [...parsedEvidence, ...groundingEvidence];
-      const uniqueMap = new Map<string, EvidenceItem>();
-      for (const ev of combined) {
-        if (ev.url) uniqueMap.set(ev.url, ev);
-      }
-      const uniqueEvidence = Array.from(uniqueMap.values());
+      } catch {}
 
       return {
-        hasCollision: parsedHasCollision || groundingEvidence.length > 0,
-        totalResults: parsedTotalResults || uniqueEvidence.length,
-        evidence: uniqueEvidence,
+        hasCollision,
+        totalResults,
+        evidence,
         provider: this.name,
         query,
         strictnessMode

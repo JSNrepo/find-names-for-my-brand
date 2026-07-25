@@ -167,9 +167,23 @@ export function createApp() {
         if (ctx.hasCollision) hasCollision = true;
       }
 
-      let domains: any[] = [];
-      if (!hasCollision && validatedBrief.checkDomains) {
-        domains = await checkDomains(name);
+      const domains = await checkDomains(name);
+      const registeredDomains = domains.filter(d => d.status === 'registered');
+      if (registeredDomains.length > 0) {
+        hasCollision = true;
+        checks.push({
+          type: 'domain-registration',
+          status: 'collision',
+          query: name,
+          totalResults: registeredDomains.length,
+          evidence: registeredDomains.map(d => ({
+            title: `${d.domain} is registered`,
+            url: `https://${d.domain}`,
+            snippet: `Active DNS record found for ${d.domain}`
+          })),
+          checkedAt: new Date().toISOString(),
+          provider: 'Cloudflare DNS'
+        });
       }
 
       res.json({ name, checks, domains, hasCollision });
