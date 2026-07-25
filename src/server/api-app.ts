@@ -1,10 +1,10 @@
 import express from 'express';
 import { GoogleGenAI } from '@google/genai';
-import { ProjectBriefSchema, NamingProject, NameRun, ValidatedName, AdminConfig } from '../types';
-import { PipelineRunner } from './engine/pipeline';
+import { ProjectBriefSchema, NamingProject, NameRun, ValidatedName, AdminConfig, Candidate } from '../types';
 import { getSearchProvider } from './search/search-factory';
 import { checkDomains } from './engine/domain-checker';
 import { GeminiCandidateGenerator } from './engine/gemini-generator';
+import { pronunciationScore, generatePhoneticVariants } from './engine/pronunciation';
 
 export function createApp() {
   const app = express();
@@ -12,8 +12,6 @@ export function createApp() {
 
   const projectsMap = new Map<string, NamingProject>();
   const runsMap = new Map<string, NameRun>();
-  const activePipelines = new Map<string, PipelineRunner>();
-  const activeStreams = new Map<string, express.Response[]>();
 
   let adminConfig: AdminConfig = {
     geminiModel: 'gemini-3.6-flash',
@@ -29,12 +27,10 @@ export function createApp() {
     blockedSuffixes: ['ly', 'ify', 'io', 'ai']
   };
 
-  // Healthcheck
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
-  // Admin Config
   app.get('/api/admin/config', (req, res) => {
     res.json(adminConfig);
   });
@@ -47,19 +43,15 @@ export function createApp() {
   app.post('/api/admin/clear-all', (req, res) => {
     projectsMap.clear();
     runsMap.clear();
-    activePipelines.clear();
-    activeStreams.clear();
     res.json({ success: true, message: 'All in-memory project and run databases cleared fresh.' });
   });
 
-  // Projects Endpoints
   app.post('/api/projects', (req, res) => {
     try {
       const brief = ProjectBriefSchema.parse(req.body.brief || req.body);
       const id = req.body.id || `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const userId = req.body.userId || 'guest_user';
       const title = req.body.title || brief.productType || 'New Naming Project';
-
       const project: NamingProject = {
         id, userId, title, brief,
         status: 'draft',
@@ -69,7 +61,6 @@ export function createApp() {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-
       projectsMap.set(id, project);
       res.json(project);
     } catch (err: any) {
@@ -103,121 +94,89 @@ export function createApp() {
     res.json({ success: true, message: 'Project deleted' });
   });
 
-  // Name Runs Pipeline
-  app.post('/api/name-runs', async (req, res) => {
+  app.post('/api/candidates/generate', async (req, res) => {
     try {
-      const brief = ProjectBriefSchema.parse(req.body.brief);
-      const projectId = req.body.projectId || `proj_${Date.now()}`;
-      const userId = req.body.userId || 'guest_user';
-      const runId = `run_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const targetCount = req.body.targetCount || brief.targetCount || 10;
-      const likedName = req.body.likedName as string | undefined;
+      const brief = ProjectBriefSchema.parse(req.body.brief || req.body);
       const customApiKey = (req.body.userApiKey || req.headers['x-gemini-key'] || req.headers['x-gemini-api-key']) as string | undefined;
+      const likedName = req.body.likedName as string | undefined;
+      const count = Math.min(req.body.count || 40, 50);
 
       if (!customApiKey || !customApiKey.trim()) {
         return res.status(400).json({
-          error: 'BYOK Required: Find Names for My Brand is open-source and operates strictly on Bring Your Own Key (BYOK). Please enter your free Gemini API key in Settings or the key prompt.'
+          error: 'BYOK Required'
         });
       }
 
-      const initialRun: NameRun = {
-        id: runId, projectId, userId, status: 'running', targetCount,
-        stats: { generatedCount: 0, pronunciationFilteredCount: 0, localFilteredCount: 0, searchedCount: 0, collisionsFoundCount: 0, passedCount: 0, currentStage: 'Initializing pipeline' },
-        validatedNames: [],
-        logs: [{ timestamp: new Date().toISOString(), message: 'Pipeline initialized', type: 'info' }],
-        createdAt: new Date().toISOString()
-      };
+      const generator = new GeminiCandidateGenerator(customApiKey);
+      let candidates: Candidate[];
+      if (likedName) {
+        candidates = await generator.generateSimilarCandidates(likedName, brief, count);
+      } else {
+        candidates = await generator.generateCandidates(brief, count);
+      }
 
-      runsMap.set(runId, initialRun);
-
-      const runner = new PipelineRunner(brief, adminConfig.searchProvider, customApiKey);
-      activePipelines.set(runId, runner);
-
-      runner.runPipeline(targetCount, (stats, newLog, validatedName) => {
-        const run = runsMap.get(runId);
-        if (run) {
-          run.stats = stats;
-          if (newLog) run.logs.push(newLog);
-          if (validatedName) run.validatedNames.push(validatedName);
-        }
-        const resList = activeStreams.get(runId);
-        if (resList) {
-          const eventData = JSON.stringify({ stats, newLog, validatedName });
-          resList.forEach(resStream => { resStream.write(`data: ${eventData}\n\n`); });
-        }
-      }, likedName).then((results) => {
-        const run = runsMap.get(runId);
-        if (run) {
-          run.status = runner['isCancelled'] ? 'cancelled' : 'completed';
-          run.completedAt = new Date().toISOString();
-          run.validatedNames = results;
-        }
-        const proj = projectsMap.get(projectId);
-        if (proj) {
-          proj.status = 'completed';
-          proj.savedCandidates = results;
-          proj.updatedAt = new Date().toISOString();
-        }
-        const resList = activeStreams.get(runId);
-        if (resList) {
-          resList.forEach(resStream => {
-            resStream.write(`data: ${JSON.stringify({ finished: true, results })}\n\n`);
-            resStream.end();
-          });
-          activeStreams.delete(runId);
-        }
-        activePipelines.delete(runId);
-      }).catch(err => {
-        console.error('Pipeline execution error:', err);
-        const run = runsMap.get(runId);
-        if (run) {
-          run.status = 'failed';
-          run.logs.push({ timestamp: new Date().toISOString(), message: `Failed: ${err.message}`, type: 'error' });
-        }
-        activePipelines.delete(runId);
+      candidates = candidates.filter(c => {
+        const lower = c.name.toLowerCase();
+        if (lower.length < brief.minimumLetters || lower.length > brief.maximumLetters) return false;
+        if (brief.avoidTerms.some(t => t.length >= 2 && lower.includes(t.toLowerCase()))) return false;
+        if (pronunciationScore(c.name) < 80) return false;
+        return true;
       });
 
-      res.json(initialRun);
+      res.json({ candidates });
     } catch (err: any) {
-      res.status(400).json({ error: err.message || 'Failed to start name run' });
+      res.status(400).json({ error: err.message || 'Failed to generate candidates' });
     }
   });
 
-  app.get('/api/name-runs/:runId', (req, res) => {
-    const run = runsMap.get(req.params.runId);
-    if (!run) return res.status(404).json({ error: 'Run not found' });
-    res.json(run);
-  });
+  app.post('/api/candidates/validate', async (req, res) => {
+    try {
+      const { name, brief, strictnessMode } = req.body;
+      const validatedBrief = ProjectBriefSchema.parse(brief || {});
+      const mode = strictnessMode || 'extreme';
+      const provider = getSearchProvider(adminConfig.searchProvider);
+      const checks: any[] = [];
+      let hasCollision = false;
 
-  app.get('/api/name-runs/:runId/stream', (req, res) => {
-    const runId = req.params.runId;
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+      const exactResult = await provider.exactSearch(name, mode);
+      checks.push({
+        type: 'exact-search',
+        status: exactResult.hasCollision ? 'collision' : 'passed',
+        query: exactResult.query,
+        totalResults: exactResult.totalResults,
+        evidence: exactResult.evidence,
+        checkedAt: new Date().toISOString(),
+        provider: exactResult.provider
+      });
+      if (exactResult.hasCollision) hasCollision = true;
 
-    if (!activeStreams.has(runId)) activeStreams.set(runId, []);
-    activeStreams.get(runId)!.push(res);
+      if (!hasCollision && validatedBrief.checkSoftware) {
+        const ctx = await provider.contextualSearch(name, 'software', mode);
+        checks.push({ type: 'software-search', status: ctx.hasCollision ? 'collision' : 'passed', query: ctx.query, totalResults: ctx.totalResults, evidence: ctx.evidence, checkedAt: new Date().toISOString(), provider: ctx.provider });
+        if (ctx.hasCollision) hasCollision = true;
+      }
+      if (!hasCollision && validatedBrief.checkCompany) {
+        const ctx = await provider.contextualSearch(name, 'company', mode);
+        checks.push({ type: 'company-search', status: ctx.hasCollision ? 'collision' : 'passed', query: ctx.query, totalResults: ctx.totalResults, evidence: ctx.evidence, checkedAt: new Date().toISOString(), provider: ctx.provider });
+        if (ctx.hasCollision) hasCollision = true;
+      }
+      if (!hasCollision && validatedBrief.checkApp) {
+        const ctx = await provider.contextualSearch(name, 'app', mode);
+        checks.push({ type: 'app-search', status: ctx.hasCollision ? 'collision' : 'passed', query: ctx.query, totalResults: ctx.totalResults, evidence: ctx.evidence, checkedAt: new Date().toISOString(), provider: ctx.provider });
+        if (ctx.hasCollision) hasCollision = true;
+      }
 
-    const run = runsMap.get(runId);
-    if (run) {
-      res.write(`data: ${JSON.stringify({ stats: run.stats, logs: run.logs, validatedNames: run.validatedNames })}\n\n`);
+      let domains: any[] = [];
+      if (!hasCollision && validatedBrief.checkDomains) {
+        domains = await checkDomains(name);
+      }
+
+      res.json({ name, checks, domains, hasCollision });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
-
-    req.on('close', () => {
-      const list = activeStreams.get(runId);
-      if (list) activeStreams.set(runId, list.filter(r => r !== res));
-    });
   });
 
-  app.post('/api/name-runs/:runId/cancel', (req, res) => {
-    const runner = activePipelines.get(req.params.runId);
-    if (runner) runner.cancel();
-    const run = runsMap.get(req.params.runId);
-    if (run) run.status = 'cancelled';
-    res.json({ success: true, message: 'Run cancelled' });
-  });
-
-  // Single candidate actions
   app.post('/api/candidates/similar', async (req, res) => {
     try {
       const { name, brief, userApiKey } = req.body;
@@ -263,7 +222,6 @@ export function createApp() {
     }
   });
 
-  // Guided Assistant Chat
   app.post('/api/assistant/chat', async (req, res) => {
     try {
       const { messages, currentBrief, userApiKey } = req.body;

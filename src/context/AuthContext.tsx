@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { auth, signInWithGoogle, logout } from '../lib/firebase';
+import { auth, signInWithGoogle, getRedirectResultUser, logout } from '../lib/firebase';
 import { UserProfile, getUserProfile, updateUserProfile, registerDeviceSession } from '../lib/userProfile';
 
 interface AuthContextType {
@@ -54,6 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    getRedirectResultUser();
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -77,14 +78,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = async () => {
     try {
       const u = await signInWithGoogle();
-      setUser(u);
-      if (u) await loadProfileForUser(u);
+      if (u) {
+        setUser(u);
+        await loadProfileForUser(u);
+      }
       return u;
     } catch (err: any) {
-      if (err?.code === 'auth/popup-closed-by-user' || err?.message?.includes('popup-closed-by-user')) {
-        console.warn('Sign-in popup was closed before completion.');
-        return null;
-      }
       console.error('Google Auth Error:', err);
       return null;
     }

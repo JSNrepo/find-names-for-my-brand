@@ -46,44 +46,76 @@ export function AppContent() {
   };
 
   const handleSubmitBrief = async (brief: ProjectBrief) => {
-    // Require BYOK Gemini API Key
     const hasCustomKey = Boolean(profile?.customGeminiKey);
-
     if (!hasCustomKey) {
       setShowLimitModal(true);
       return;
     }
 
     try {
-      // 1. Create project
-      const projRes = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brief, title: brief.productType })
-      });
-      const project: NamingProject = await projRes.json();
-      setActiveProjectId(project.id);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'x-gemini-key': profile!.customGeminiKey!
+      };
 
-      // 2. Start run pipeline with custom Gemini API key header if available
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (profile?.customGeminiKey) {
-        headers['x-gemini-key'] = profile.customGeminiKey;
-      }
-
-      const runRes = await fetch('/api/name-runs', {
+      const genRes = await fetch('/api/candidates/generate', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ brief, projectId: project.id, targetCount: brief.targetCount })
+        body: JSON.stringify({ brief, count: 40 })
       });
-      const run = await runRes.json();
-      
-      // Increment runs used
-      await incrementRuns();
+      if (!genRes.ok) throw new Error((await genRes.json()).error || 'Generation failed');
+      const { candidates } = await genRes.json();
 
-      setActiveRunId(run.id);
-      setCurrentTab('running');
+      const validated: ValidatedName[] = [];
+      for (let i = 0; i < candidates.length; i++) {
+        const c = candidates[i];
+        const valRes = await fetch('/api/candidates/validate', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ name: c.name, brief, strictnessMode: brief.strictnessMode })
+        });
+        const val = await valRes.json();
+
+        const syllableCount = Math.max(1, c.name.toLowerCase().replace(/(?:[^laeiouy]|ed|es|e)$/i, '').replace(/^y/i, '').match(/[aeiouy]{1,2}/g)?.length || 1);
+        const pScore = Math.min(100, Math.max(60,
+          100 - (syllableCount * 5) -
+          (c.name.length > 8 ? 10 : 0) -
+          (/[^aeiouy]{3,}/i.test(c.name) ? 10 : 0) -
+          (/(ough|eigh|psh|mn|cz|kn|gn|wr)/.test(c.name.toLowerCase()) ? 10 : 0)
+        ));
+        const memScore = Math.min(100, Math.max(60, 100 - (c.name.length * 3)));
+        const relScore = Math.round(c.confidence || 85);
+        const passedChecks = val.checks?.filter((ch: any) => ch.status === 'passed').length || 0;
+        const confidence = Math.min(95, Math.max(82, 85 + (passedChecks * 2)));
+        const visualSimplicity = c.name.length <= 6 ? 95 : 80;
+        const finalScore = Math.round(
+          (pScore * 0.3) + (memScore * 0.2) + (relScore * 0.2) + (confidence * 0.2) + (visualSimplicity * 0.1)
+        );
+
+        if (!val.hasCollision) {
+          validated.push({
+            id: `val_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            candidate: c,
+            checks: val.checks || [],
+            domains: val.domains || [],
+            pronunciationScore: pScore,
+            memorabilityScore: memScore,
+            relevanceScore: relScore,
+            uniquenessConfidence: confidence,
+            finalScore,
+            status: 'passed',
+            validatedAt: new Date().toISOString()
+          });
+        }
+      }
+
+      validated.sort((a, b) => b.finalScore - a.finalScore);
+
+      await incrementRuns();
+      setValidatedNames(validated);
+      setCurrentTab('results');
     } catch (err) {
-      console.error('Error starting project run:', err);
+      console.error('Error generating names:', err);
     }
   };
 
@@ -93,9 +125,6 @@ export function AppContent() {
   };
 
   const handleCancelRun = async () => {
-    if (activeRunId) {
-      await fetch(`/api/name-runs/${activeRunId}/cancel`, { method: 'POST' });
-    }
     setCurrentTab('results');
   };
 
