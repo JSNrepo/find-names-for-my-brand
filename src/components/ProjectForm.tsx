@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { ProjectBrief } from '../types';
+import { useAuth } from '../context/AuthContext';
 import { Sparkles, ShieldCheck, Zap, Bot, X, Info, GraduationCap, HeartPulse, ShoppingBag, Coffee, Wallet, Cpu, ChevronDown } from 'lucide-react';
 
 interface ProjectFormProps {
@@ -371,6 +372,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({ initialBrief, onSubmit
     setValue('avoidTerms', avoidTerms.filter(t => t !== term));
   };
 
+  const { profile } = useAuth();
+
   // Assistant Chat handler
   const handleSendChatMessage = async () => {
     if (!chatInput.trim() || chatLoading) return;
@@ -382,7 +385,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({ initialBrief, onSubmit
     try {
       const res = await fetch('/api/assistant/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-gemini-key': profile?.customGeminiKey || '' },
         body: JSON.stringify({
           messages: [...chatMessages, { role: 'user', content: userMsg }],
           currentBrief: watch()
