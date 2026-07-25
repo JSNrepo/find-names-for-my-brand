@@ -19,7 +19,6 @@ export class GeminiGroundingSearchProvider implements SearchProvider {
   async exactSearch(candidateName: string, strictnessMode: 'extreme' | 'commercial' = 'extreme'): Promise<ExactSearchResult> {
     const query = `"${candidateName}"`;
     if (!this.ai) {
-      // Fallback if no key
       return {
         hasCollision: false,
         exactMatchCount: 0,
@@ -33,31 +32,25 @@ export class GeminiGroundingSearchProvider implements SearchProvider {
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-3.6-flash',
-        contents: `Perform an exact search check for the brand/product name "${candidateName}".
-Determine if "${candidateName}" is currently used as a brand, company, app, software, product, domain, project, or online entity.
-Return JSON with format:
+        contents: `Search the web for the exact brand/product name "${candidateName}" and tell me if it is currently used by any company, product, software, app, organization, or online entity anywhere in the world.
+
+First use Google Search to find ALL results. Then analyze what you found.
+
+Return ONLY valid JSON with this exact structure (no markdown, no code fences):
 {
   "hasCollision": boolean,
   "exactMatchCount": number,
-  "summary": "short explanation",
+  "summary": "list every entity you found using this name",
   "evidence": [{"title": "string", "url": "string", "snippet": "string"}]
 }
-Notice: If strictnessMode is "extreme", set hasCollision=true if ANY active entity uses this exact name. If "commercial", set hasCollision=true only if commercially or officially used.`,
+
+IMPORTANT: In extreme strictness mode, hasCollision must be true if ANY entity anywhere uses this exact name, regardless of industry or geography.`,
         config: {
           tools: [{ googleSearch: {} }],
-          responseMimeType: 'application/json'
+          temperature: 0.1
         }
       });
 
-      const text = response.text?.trim() || '{}';
-      let parsed: any = {};
-      try {
-        parsed = JSON.parse(text);
-      } catch (e) {
-        parsed = { hasCollision: false, exactMatchCount: 0, evidence: [] };
-      }
-
-      // Also extract grounding chunks if available
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const groundingEvidence: EvidenceItem[] = [];
       for (const chunk of chunks) {
@@ -65,25 +58,40 @@ Notice: If strictnessMode is "extreme", set hasCollision=true if ANY active enti
           groundingEvidence.push({
             title: chunk.web.title,
             url: chunk.web.uri,
-            snippet: `Found via web search for "${candidateName}"`
+            snippet: `Found via Google Search for "${candidateName}"`
           });
         }
       }
 
-      const combinedEvidence = [...(parsed.evidence || []), ...groundingEvidence];
-      // Deduplicate evidence by URL
+      let parsedEvidence: EvidenceItem[] = [];
+      let parsedHasCollision = false;
+      let parsedExactMatchCount = 0;
+      try {
+        const text = response.text?.trim() || '';
+        const jsonStart = text.indexOf('{');
+        const jsonEnd = text.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          const json = text.slice(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(json);
+          parsedEvidence = parsed.evidence || [];
+          parsedHasCollision = Boolean(parsed.hasCollision);
+          parsedExactMatchCount = parsed.exactMatchCount || 0;
+        }
+      } catch { }
+
+      const combinedEvidence = [...parsedEvidence, ...groundingEvidence];
       const uniqueEvidenceMap = new Map<string, EvidenceItem>();
       for (const ev of combinedEvidence) {
         if (ev.url) uniqueEvidenceMap.set(ev.url, ev);
       }
-
       const uniqueEvidence = Array.from(uniqueEvidenceMap.values());
 
-      let hasCollision = Boolean(parsed.hasCollision);
+      const hasGroundingResults = groundingEvidence.length > 0;
+      let hasCollision = parsedHasCollision || hasGroundingResults;
+
       if (strictnessMode === 'extreme' && uniqueEvidence.length > 0) {
-        // In extreme mode, if there's any active grounding match using exact name, flag collision
         const nameLower = candidateName.toLowerCase();
-        const foundExactInTitleOrSnippet = uniqueEvidence.some(e => 
+        const foundExactInTitleOrSnippet = uniqueEvidence.some(e =>
           e.title.toLowerCase().includes(nameLower) || (e.snippet && e.snippet.toLowerCase().includes(nameLower))
         );
         if (foundExactInTitleOrSnippet) {
@@ -93,8 +101,8 @@ Notice: If strictnessMode is "extreme", set hasCollision=true if ANY active enti
 
       return {
         hasCollision,
-        exactMatchCount: parsed.exactMatchCount || uniqueEvidence.length,
-        totalResults: parsed.exactMatchCount || uniqueEvidence.length,
+        exactMatchCount: parsedExactMatchCount || uniqueEvidence.length,
+        totalResults: uniqueEvidence.length,
         evidence: uniqueEvidence,
         provider: this.name,
         query
@@ -128,33 +136,27 @@ Notice: If strictnessMode is "extreme", set hasCollision=true if ANY active enti
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-3.6-flash',
-        contents: `Search web for "${candidateName}" ${context}.
-Check if "${candidateName}" is used as a ${context} or brand.
-Return JSON:
+        contents: `Search the web for "${candidateName}" in the context of "${context}".
+Use Google Search to find if "${candidateName}" is used as a ${context} or brand.
+
+Return ONLY valid JSON (no markdown, no code fences):
 {
   "hasCollision": boolean,
   "totalResults": number,
+  "summary": "what entities were found",
   "evidence": [{"title": "string", "url": "string", "snippet": "string"}]
 }`,
         config: {
           tools: [{ googleSearch: {} }],
-          responseMimeType: 'application/json'
+          temperature: 0.1
         }
       });
 
-      const text = response.text?.trim() || '{}';
-      let parsed: any = {};
-      try {
-        parsed = JSON.parse(text);
-      } catch (e) {
-        parsed = { hasCollision: false, totalResults: 0, evidence: [] };
-      }
-
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const evidence: EvidenceItem[] = [];
+      const groundingEvidence: EvidenceItem[] = [];
       for (const chunk of chunks) {
         if (chunk.web?.uri && chunk.web?.title) {
-          evidence.push({
+          groundingEvidence.push({
             title: chunk.web.title,
             url: chunk.web.uri,
             snippet: `Contextual check for "${candidateName}" ${context}`
@@ -162,10 +164,33 @@ Return JSON:
         }
       }
 
+      let parsedHasCollision = false;
+      let parsedTotalResults = 0;
+      let parsedEvidence: EvidenceItem[] = [];
+      try {
+        const text = response.text?.trim() || '';
+        const jsonStart = text.indexOf('{');
+        const jsonEnd = text.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          const json = text.slice(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(json);
+          parsedHasCollision = Boolean(parsed.hasCollision);
+          parsedTotalResults = parsed.totalResults || 0;
+          parsedEvidence = parsed.evidence || [];
+        }
+      } catch { }
+
+      const combined = [...parsedEvidence, ...groundingEvidence];
+      const uniqueMap = new Map<string, EvidenceItem>();
+      for (const ev of combined) {
+        if (ev.url) uniqueMap.set(ev.url, ev);
+      }
+      const uniqueEvidence = Array.from(uniqueMap.values());
+
       return {
-        hasCollision: Boolean(parsed.hasCollision || (strictnessMode === 'extreme' && evidence.length > 0)),
-        totalResults: parsed.totalResults || evidence.length,
-        evidence,
+        hasCollision: parsedHasCollision || groundingEvidence.length > 0,
+        totalResults: parsedTotalResults || uniqueEvidence.length,
+        evidence: uniqueEvidence,
         provider: this.name,
         query,
         strictnessMode
