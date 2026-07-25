@@ -2,8 +2,8 @@ import { GoogleGenAI } from '@google/genai';
 import { SearchProvider } from './search-provider.interface';
 import { ExactSearchResult, SearchCheckResult, EvidenceItem } from '../../types';
 
-export class GeminiGroundingSearchProvider implements SearchProvider {
-  name = 'Gemini Knowledge + DNS';
+export class GeminiKnowledgeSearchProvider implements SearchProvider {
+  name = 'Gemini Knowledge';
   private ai: GoogleGenAI | null = null;
 
   constructor(userApiKey?: string) {

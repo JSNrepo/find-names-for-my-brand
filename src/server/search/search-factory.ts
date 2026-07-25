@@ -2,7 +2,8 @@ import { SearchProvider } from './search-provider.interface';
 import { GoogleCustomSearchProvider } from './google-search.provider';
 import { SerperSearchProvider } from './serper.provider';
 import { BraveSearchProvider } from './brave.provider';
-import { GeminiGroundingSearchProvider } from './gemini-grounding.provider';
+import { GeminiKnowledgeSearchProvider } from './gemini-knowledge.provider';
+import { DuckDuckGoSearchProvider } from './duckduckgo.provider';
 
 export function getSearchProvider(overrideProvider?: string, userApiKey?: string): SearchProvider {
   const providerType = (overrideProvider || process.env.SEARCH_PROVIDER || 'auto').toLowerCase();
@@ -31,6 +32,15 @@ export function getSearchProvider(overrideProvider?: string, userApiKey?: string
     }
   }
 
-  // Always fallback to Gemini Search Grounding (use user's BYOK key if available)
-  return new GeminiGroundingSearchProvider(userApiKey);
+  // DuckDuckGo — free, no API key needed
+  if (providerType === 'duckduckgo' || providerType === 'auto') {
+    try {
+      return new DuckDuckGoSearchProvider();
+    } catch (e) {
+      console.warn('Falling back from DuckDuckGo Provider:', e);
+    }
+  }
+
+  // Final fallback: Gemini knowledge (uses BYOK, works offline)
+  return new GeminiKnowledgeSearchProvider(userApiKey);
 }
