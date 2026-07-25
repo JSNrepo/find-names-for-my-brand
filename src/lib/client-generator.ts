@@ -31,49 +31,68 @@ export async function generateCandidates(
   const personalityStr = brief.personality.join(', ') || 'modern, professional';
   const meaningsStr = brief.meanings.join(', ') || 'readiness, progress';
 
+  const creativeTechniques = `
+- NEO-CLASSICAL: Greek/Latin roots fused unconventionally (Aetheron, Velaris, Crystalis)
+- METAPHOR + ABSTRACTION: Evocative concepts (Ember, Pivot, Apex, Cipher, Vellum)
+- PORTMANTEAU: Two meaningful words fused (Codex + Apex = Codexpex, Bright + Harbor = Brighter)
+- PHONETIC INVENTIONS: Pure sound sculptures with no dictionary meaning (Zylara, Noven, Quixos)
+- BIOMIMICRY: Nature-inspired (Sparrow, Canopy, Drift, Pollen, Mycelium)
+- ARCHITECTURAL: Structural terms reimagined (Keystone, Facet, Spire, Strata, Axis)
+- CELESTIAL: Stars/space metaphors (Nova, Solara, Orion, Lyra, Eclipse)
+- MATERIAL: Fabric/mineral names (Silica, Velvox, Brassia, Chroma, Lumen)
+- COMPOUND ABSTRACT: Two short evocative words (BrightField, NextPulse, TrueNorth, ClearState)
+- CULTURAL FUSION: Blend roots from 2+ languages (Mandarin + Latin = Luminao)
+`;
+
   const prompt = likedName
-    ? `You are a world-class naming strategist and creative branding expert.
-Analyze the liked candidate name "${likedName}" and generate ${count} NEW structurally and phonetically similar brand names.
+    ? `You are a world-class naming strategist. Generate ${count} fresh, creative brand names for this project.
 
-PRODUCT TYPE: ${brief.productType}
+PROJECT: ${brief.productType}
 DESCRIPTION: ${brief.description}
+AUDIENCE: ${brief.audience}
 INDUSTRY: ${brief.industry}
-TARGET AUDIENCE: ${brief.audience}
-BRAND PERSONALITY: ${personalityStr}
+VIBE: ${personalityStr}
+THEMES: ${meaningsStr}
 
-STRICT CONSTRAINTS:
-1. DO NOT do lazy edits (changing 1-2 letters like "${likedName}" -> "${likedName.slice(0, -1)}o").
-2. DO NOT add overused suffixes (-ify, -ly, -io, -ai, -labs, -hub).
-3. Minimum length: ${brief.minimumLetters}, Maximum length: ${brief.maximumLetters}.
-4. Must be easy to pronounce globally.
-5. FORBIDDEN TERMS: ${avoidTermsStr}
+The user liked "${likedName}". Generate names in a similar creative spirit but using completely different root words and structures. No lazy letter swaps.
 
-Return a JSON array of candidate objects matching the requested schema.`
-    : `You are a world-class naming strategist and creative branding expert.
-Generate a highly diverse, creative batch of ${count} original candidate brand names specifically tailored for this project:
+CREATIVE TOOLKIT (use these techniques, mix them up):${creativeTechniques}
+RULES:
+- Length: ${brief.minimumLetters}-${brief.maximumLetters} chars, max ${brief.maximumSyllables} syllables
+- Easy global pronunciation
+- Avoid dictionary words
+- No: ${avoidTermsStr}
+- No: -ify, -ly, -io, -ai, -labs, -hub suffixes
+- No: obvious famous brand clones
 
-PRODUCT TYPE: ${brief.productType}
+Return JSON array of candidate objects.`
+    : `You are an award-winning naming strategist. Brainstorm ${count} bold, original brand names for:
+
+PROJECT: ${brief.productType}
 DESCRIPTION: ${brief.description}
-TARGET AUDIENCE: ${brief.audience}
+AUDIENCE: ${brief.audience}
 INDUSTRY: ${brief.industry}
-BRAND PERSONALITY: ${personalityStr}
-DESIRED MEANINGS & THEMES: ${meaningsStr}
+VIBE: ${personalityStr}
+THEMES: ${meaningsStr}
 
-CREATIVE BRAINSTORMING INSTRUCTIONS:
-1. Brainstorm names deeply relevant to ${brief.productType} and ${brief.industry}. Use diverse linguistic structures (blended roots, domain-inspired coinages, evocative metaphors, dynamic action words, and clean phonetic inventions).
-2. DO NOT use identical structural templates or repetitive suffix patterns across names. Mix 1-syllable, 2-syllable, and 3-syllable names with varying vowel and consonant flows.
-3. STRICT LENGTH RULES: Minimum length: ${brief.minimumLetters} letters, Maximum length: ${brief.maximumLetters} letters. Maximum syllables: ${brief.maximumSyllables}.
-4. PRONUNCIATION: Must be smooth, natural, and easily pronounceable globally.
-5. AVOID: Do NOT output standard English dictionary words.
-6. FORBIDDEN TERMS TO AVOID: ${avoidTermsStr}. Do not include these specific terms inside the generated names.
-7. AVOID famous company imitations (e.g. Google, Apple, Amazon, Stripe, Meta).
+CREATIVE TOOLKIT (mix these techniques across the batch):${creativeTechniques}
+RULES:
+- Length: ${brief.minimumLetters}-${brief.maximumLetters} chars, max ${brief.maximumSyllables} syllables
+- Globally easy to pronounce
+- Not standard dictionary words
+- Avoid: ${avoidTermsStr}
+- Avoid: -ify, -ly, -io, -ai, -labs, -hub suffixes
+- Avoid: obvious famous brand clones
 
-Return a JSON array of candidate objects matching the requested schema.`;
+Generate maximum diversity in structure, sound, and technique across all ${count} names. Don't repeat patterns. Wild creativity encouraged as long as it meets the rules.
+
+Return JSON array of candidate objects.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3.6-flash',
     contents: prompt,
     config: {
+      temperature: 0.9,
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.ARRAY,
