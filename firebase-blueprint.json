@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "projects": {
+      "title": "Projects",
+      "description": "User naming projects containing brief, preferences, and saved candidates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "brief": { "type": "object" },
+        "status": { "type": "string" },
+        "savedCandidates": { "type": "array" },
+        "rejectedCandidates": { "type": "array" },
+        "favouriteCandidate": { "type": "string" },
+        "notes": { "type": "string" },
+        "searchUsageCount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "title", "createdAt"]
+    },
+    "name_runs": {
+      "title": "Name Runs",
+      "description": "Execution runs for name generation and validation pipelines",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string" },
+        "targetCount": { "type": "number" },
+        "stats": { "type": "object" },
+        "candidates": { "type": "array" },
+        "logs": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "completedAt": { "type": "string" }
+      },
+      "required": ["userId", "status", "createdAt"]
+    },
+    "search_cache": {
+      "title": "Search Cache",
+      "description": "Cached search provider results for candidate verification",
+      "type": "object",
+      "properties": {
+        "cacheKey": { "type": "string" },
+        "provider": { "type": "string" },
+        "query": { "type": "string" },
+        "strictnessMode": { "type": "string" },
+        "result": { "type": "object" },
+        "expiresAt": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["cacheKey", "provider", "result", "expiresAt"]
+    },
+    "admin_config": {
+      "title": "Admin Configuration",
+      "description": "Global application configuration settings",
+      "type": "object",
+      "properties": {
+        "geminiModel": { "type": "string" },
+        "batchSize": { "type": "number" },
+        "maxSearchCalls": { "type": "number" },
+        "searchProvider": { "type": "string" },
+        "cacheDurationDays": { "type": "number" },
+        "minPronunciationScore": { "type": "number" },
+        "strictnessMode": { "type": "string" },
+        "dailyUserLimit": { "type": "number" },
+        "blockedWords": { "type": "array" },
+        "blockedBrands": { "type": "array" },
+        "blockedSuffixes": { "type": "array" },
+        "adminUserIds": { "type": "array" }
+      },
+      "required": ["searchProvider", "strictnessMode"]
+    }
+  }
+}

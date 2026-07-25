@@ -1,0 +1,6 @@
+{
+  "name": "Find Names for My Brand",
+  "description": "AI-powered brand & product name generator that displays candidate names only after passing online collision checks.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
