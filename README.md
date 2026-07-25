@@ -125,6 +125,40 @@ Opens at `http://localhost:3000`.
 
 ---
 
+## Deploy to Netlify
+
+One-click deploy:
+
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start)
+
+### Manual Setup
+
+1. Push the repo to GitHub
+2. In Netlify Dashboard → **Add new site** → **Import from Git**
+3. Select your repo, use these settings:
+
+| Setting | Value |
+|---|---|
+| **Build command** | `npm run build:netlify` |
+| **Publish directory** | `dist` |
+| **Functions directory** | `netlify/functions` |
+
+4. Add environment variables in Netlify → **Site settings** → **Environment variables**:
+
+| Variable | Notes |
+|---|---|
+| `GEMINI_API_KEY` | Required for Gemini Grounding search |
+| `BRAVE_SEARCH_API_KEY` | Optional |
+| `SERPER_API_KEY` | Optional |
+| `GOOGLE_SEARCH_API_KEY` | Optional |
+| `GOOGLE_SEARCH_ENGINE_ID` | Optional |
+
+5. Deploy! The `netlify.toml` handles API route redirects automatically.
+
+> **Note:** The SSE streaming endpoint (`/api/name-runs/:runId/stream`) has limited support on serverless platforms. Pipeline results can still be polled via `GET /api/name-runs/:runId`.
+
+---
+
 ## Architecture
 
 ```
