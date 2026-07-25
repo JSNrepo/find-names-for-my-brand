@@ -132,9 +132,10 @@ export function createApp() {
   app.post('/api/candidates/validate', async (req, res) => {
     try {
       const { name, brief, strictnessMode } = req.body;
+      const userApiKey = (req.headers['x-gemini-key'] || req.headers['x-gemini-api-key']) as string | undefined;
       const validatedBrief = ProjectBriefSchema.parse(brief || {});
       const mode = strictnessMode || 'extreme';
-      const provider = getSearchProvider(adminConfig.searchProvider);
+      const provider = getSearchProvider(adminConfig.searchProvider, userApiKey);
       const checks: any[] = [];
       let hasCollision = false;
 
@@ -193,7 +194,8 @@ export function createApp() {
   app.post('/api/search/exact', async (req, res) => {
     try {
       const { candidateName, strictnessMode } = req.body;
-      const provider = getSearchProvider(adminConfig.searchProvider);
+      const userApiKey = (req.headers['x-gemini-key'] || req.headers['x-gemini-api-key']) as string | undefined;
+      const provider = getSearchProvider(adminConfig.searchProvider, userApiKey);
       const result = await provider.exactSearch(candidateName, strictnessMode || 'extreme');
       res.json(result);
     } catch (err: any) {

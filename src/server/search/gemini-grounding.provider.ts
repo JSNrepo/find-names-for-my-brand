@@ -6,10 +6,11 @@ export class GeminiGroundingSearchProvider implements SearchProvider {
   name = 'Gemini Google Search Grounding';
   private ai: GoogleGenAI | null = null;
 
-  constructor() {
-    if (process.env.GEMINI_API_KEY) {
+  constructor(userApiKey?: string) {
+    const key = userApiKey || process.env.GEMINI_API_KEY;
+    if (key) {
       this.ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
+        apiKey: key,
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
       });
     }

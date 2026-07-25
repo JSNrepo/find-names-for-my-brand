@@ -4,7 +4,7 @@ import { SerperSearchProvider } from './serper.provider';
 import { BraveSearchProvider } from './brave.provider';
 import { GeminiGroundingSearchProvider } from './gemini-grounding.provider';
 
-export function getSearchProvider(overrideProvider?: string): SearchProvider {
+export function getSearchProvider(overrideProvider?: string, userApiKey?: string): SearchProvider {
   const providerType = (overrideProvider || process.env.SEARCH_PROVIDER || 'auto').toLowerCase();
 
   if (providerType === 'google' || (providerType === 'auto' && process.env.GOOGLE_SEARCH_API_KEY && process.env.GOOGLE_SEARCH_ENGINE_ID)) {
@@ -31,6 +31,6 @@ export function getSearchProvider(overrideProvider?: string): SearchProvider {
     }
   }
 
-  // Always fallback to Gemini Search Grounding!
-  return new GeminiGroundingSearchProvider();
+  // Always fallback to Gemini Search Grounding (use user's BYOK key if available)
+  return new GeminiGroundingSearchProvider(userApiKey);
 }

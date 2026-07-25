@@ -1,33 +1,29 @@
 import React, { useState } from 'react';
-import { ValidatedName, Candidate } from '../types';
+import { ValidatedName } from '../types';
 import { 
-  ShieldCheck, CheckCircle2, Copy, Bookmark, RefreshCw, Sparkles, 
-  ChevronDown, ChevronUp, ExternalLink, SlidersHorizontal, ArrowUpDown, FileText, Globe
+  ShieldCheck, CheckCircle2, Copy, Star, RefreshCw, Sparkles, 
+  ChevronDown, ChevronUp, ExternalLink, SlidersHorizontal, ArrowUpDown, FileSpreadsheet
 } from 'lucide-react';
 
 interface ResultsViewProps {
   validatedNames: ValidatedName[];
-  onSaveCandidate: (vn: ValidatedName) => void;
-  onRejectCandidate: (vn: ValidatedName) => void;
+  onStarToggle: (vn: ValidatedName) => void;
   onRecheckCandidate: (vn: ValidatedName) => void;
   onGenerateSimilar: (vn: ValidatedName) => void;
   onCompareCandidate: (vn: ValidatedName) => void;
-  onExportReport: (vn: ValidatedName) => void;
   onOpenCompare?: () => void;
-  savedCandidateIds: string[];
+  starredIds: string[];
   comparedCandidateIds: string[];
 }
 
 export const ResultsView: React.FC<ResultsViewProps> = ({
   validatedNames,
-  onSaveCandidate,
-  onRejectCandidate,
+  onStarToggle,
   onRecheckCandidate,
   onGenerateSimilar,
   onCompareCandidate,
-  onExportReport,
   onOpenCompare,
-  savedCandidateIds,
+  starredIds,
   comparedCandidateIds
 }) => {
   const [expandedEvidenceId, setExpandedEvidenceId] = useState<string | null>(null);
@@ -54,6 +50,32 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
       return (b.uniquenessConfidence ?? 0) - (a.uniquenessConfidence ?? 0);
     });
 
+  const handleExportAllCsv = () => {
+    const headers = ['Name', 'Score', 'Pronunciation', 'Confidence', 'Category', 'Pronounced', 'Syllables', 'Meaning', 'Story', 'Domains', 'Starred'];
+    const rows = filteredNames.map(vn => [
+      vn.candidate.name,
+      vn.finalScore ?? '',
+      vn.pronunciationScore ?? '',
+      vn.uniquenessConfidence ?? '',
+      vn.candidate.category ?? '',
+      vn.candidate.pronunciation ?? '',
+      (vn.candidate.syllables || []).join(' - '),
+      vn.candidate.meaning ?? '',
+      vn.candidate.originExplanation ?? '',
+      (vn.domains || []).map(d => `${d.domain}:${d.status}`).join('; '),
+      starredIds.includes(vn.id) ? 'Yes' : 'No'
+    ]);
+
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'brand-names.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="max-w-6xl mx-auto py-10 px-4 space-y-8">
       
@@ -70,8 +92,15 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
           </p>
         </div>
 
-        {/* Filter Controls */}
         <div className="flex flex-wrap items-center gap-3 shrink-0 text-xs">
+          <button
+            onClick={handleExportAllCsv}
+            className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs uppercase tracking-wider flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Export All to CSV
+          </button>
+
           <div>
             <label className="text-zinc-400 block mb-1 font-medium">Min Score</label>
             <select
@@ -127,7 +156,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
       ) : (
         <div className="space-y-6">
           {filteredNames.map((vn) => {
-            const isSaved = savedCandidateIds.includes(vn.id);
+            const isStarred = starredIds.includes(vn.id);
             const isCompared = comparedCandidateIds.includes(vn.id);
             const isExpanded = expandedEvidenceId === vn.id;
             const checksList = vn.checks || [];
@@ -139,8 +168,8 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
               <div 
                 key={vn.id}
                 className={`p-6 sm:p-8 rounded-3xl transition-all border ${
-                  isSaved 
-                    ? 'bg-zinc-900/90 border-emerald-500/40 shadow-emerald-500/5 shadow-xl' 
+                  isStarred 
+                    ? 'bg-zinc-900/90 border-amber-500/40 shadow-amber-500/5 shadow-xl' 
                     : 'bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700'
                 }`}
               >
@@ -224,14 +253,14 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                   
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
-                      id={`btn-save-${vn.id}`}
-                      onClick={() => onSaveCandidate(vn)}
+                      id={`btn-star-${vn.id}`}
+                      onClick={() => onStarToggle(vn)}
                       className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                        isSaved ? 'bg-emerald-500 text-zinc-950 font-bold' : 'bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800'
+                        isStarred ? 'bg-amber-500 text-zinc-950 font-bold' : 'bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800'
                       }`}
                     >
-                      <Bookmark className="w-3.5 h-3.5" />
-                      <span>{isSaved ? 'Saved' : 'Save Name'}</span>
+                      <Star className="w-3.5 h-3.5" fill={isStarred ? 'currentColor' : 'none'} />
+                      <span>{isStarred ? 'Starred' : 'Star'}</span>
                     </button>
 
                     <button
@@ -261,15 +290,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                     >
                       <ArrowUpDown className="w-3.5 h-3.5" />
                       <span>{isCompared ? 'In Compare Matrix' : 'Compare'}</span>
-                    </button>
-
-                    <button
-                      id={`btn-report-${vn.id}`}
-                      onClick={() => onExportReport(vn)}
-                      className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 text-xs font-semibold flex items-center gap-1.5"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>Export Report</span>
                     </button>
                   </div>
 

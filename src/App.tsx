@@ -3,19 +3,20 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar } from './components/Sidebar';
 import { LandingPage } from './components/LandingPage';
 import { ProjectForm } from './components/ProjectForm';
-import { LivePipelineView } from './components/LivePipelineView';
 import { ResultsView } from './components/ResultsView';
 import { CompareView } from './components/CompareView';
 import { SavedProjectsView } from './components/SavedProjectsView';
-import { ValidationReportView } from './components/ValidationReportView';
 import { AccountView } from './components/AccountView';
 import { AdminView } from './components/AdminView';
 import { MethodologyView } from './components/MethodologyView';
 import { OnboardingTour } from './components/OnboardingTour';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { generateCandidates } from './lib/client-generator';
 import { CookieBanner } from './components/LegalModals';
 import { ProjectBrief, NamingProject, ValidatedName } from './types';
-import { ShieldCheck, AlertCircle, Sparkles, CreditCard, Key, ExternalLink, Save, Check } from 'lucide-react';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from './lib/firebase';
+import { Sparkles, Key, ExternalLink, Save, Check } from 'lucide-react';
 
 export function AppContent() {
   const { user, profile, loading, incrementRuns, markTourSeen, saveGeminiKey } = useAuth();
@@ -23,11 +24,10 @@ export function AppContent() {
   const [currentTab, setCurrentTab] = useState<string>('new-project');
   const [presetBrief, setPresetBrief] = useState<Partial<ProjectBrief> | undefined>();
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [validatedNames, setValidatedNames] = useState<ValidatedName[]>([]);
-  const [savedCandidateIds, setSavedCandidateIds] = useState<string[]>([]);
+  const [currentBrief, setCurrentBrief] = useState<ProjectBrief | null>(null);
+  const [starredIds, setStarredIds] = useState<string[]>([]);
   const [comparedCandidates, setComparedCandidates] = useState<ValidatedName[]>([]);
-  const [reportCandidate, setReportCandidate] = useState<ValidatedName | null>(null);
   
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [modalApiKeyInput, setModalApiKeyInput] = useState('');
@@ -44,68 +44,66 @@ export function AppContent() {
     setPresetBrief(preset);
     setCurrentTab('new-project');
   };
-
   const handleSubmitBrief = async (brief: ProjectBrief) => {
-    const hasCustomKey = Boolean(profile?.customGeminiKey);
-    if (!hasCustomKey) {
+    const apiKey = profile?.customGeminiKey;
+    if (!apiKey) {
       setShowLimitModal(true);
       return;
     }
 
+    setCurrentBrief(brief);
+    setActiveProjectId('generating');
+    setCurrentTab('running');
+
     try {
+      const candidates = await generateCandidates(apiKey, brief, 40);
+
+      if (candidates.length === 0) {
+        throw new Error('No candidates were generated. Check your Gemini API key and try again.');
+      }
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'x-gemini-key': profile!.customGeminiKey!
+        'x-gemini-key': apiKey
       };
-
-      const genRes = await fetch('/api/candidates/generate', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ brief, count: 40 })
-      });
-      if (!genRes.ok) throw new Error((await genRes.json()).error || 'Generation failed');
-      const { candidates } = await genRes.json();
 
       const validated: ValidatedName[] = [];
       for (let i = 0; i < candidates.length; i++) {
         const c = candidates[i];
-        const valRes = await fetch('/api/candidates/validate', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ name: c.name, brief, strictnessMode: brief.strictnessMode })
-        });
-        const val = await valRes.json();
-
-        const syllableCount = Math.max(1, c.name.toLowerCase().replace(/(?:[^laeiouy]|ed|es|e)$/i, '').replace(/^y/i, '').match(/[aeiouy]{1,2}/g)?.length || 1);
-        const pScore = Math.min(100, Math.max(60,
-          100 - (syllableCount * 5) -
-          (c.name.length > 8 ? 10 : 0) -
-          (/[^aeiouy]{3,}/i.test(c.name) ? 10 : 0) -
-          (/(ough|eigh|psh|mn|cz|kn|gn|wr)/.test(c.name.toLowerCase()) ? 10 : 0)
-        ));
-        const memScore = Math.min(100, Math.max(60, 100 - (c.name.length * 3)));
-        const relScore = Math.round(c.confidence || 85);
-        const passedChecks = val.checks?.filter((ch: any) => ch.status === 'passed').length || 0;
-        const confidence = Math.min(95, Math.max(82, 85 + (passedChecks * 2)));
-        const visualSimplicity = c.name.length <= 6 ? 95 : 80;
-        const finalScore = Math.round(
-          (pScore * 0.3) + (memScore * 0.2) + (relScore * 0.2) + (confidence * 0.2) + (visualSimplicity * 0.1)
-        );
-
-        if (!val.hasCollision) {
-          validated.push({
-            id: `val_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-            candidate: c,
-            checks: val.checks || [],
-            domains: val.domains || [],
-            pronunciationScore: pScore,
-            memorabilityScore: memScore,
-            relevanceScore: relScore,
-            uniquenessConfidence: confidence,
-            finalScore,
-            status: 'passed',
-            validatedAt: new Date().toISOString()
+        try {
+          const valRes = await fetch('/api/candidates/validate', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ name: c.name, brief, strictnessMode: brief.strictnessMode })
           });
+          const val = await valRes.json();
+
+          const sCount = Math.max(1, c.name.toLowerCase().replace(/(?:[^laeiouy]|ed|es|e)$/i, '').replace(/^y/i, '').match(/[aeiouy]{1,2}/g)?.length || 1);
+          const pScore = Math.min(100, Math.max(60, 100 - (sCount * 5) - (c.name.length > 8 ? 10 : 0) - (/[^aeiouy]{3,}/i.test(c.name) ? 10 : 0) - (/(ough|eigh|psh|mn|cz|kn|gn|wr)/.test(c.name.toLowerCase()) ? 10 : 0)));
+          const memScore = Math.min(100, Math.max(60, 100 - (c.name.length * 3)));
+          const relScore = Math.round(c.confidence || 85);
+          const passedChecks = val.checks?.filter((ch: any) => ch.status === 'passed').length || 0;
+          const confidence = Math.min(95, Math.max(82, 85 + (passedChecks * 2)));
+          const visualSimplicity = c.name.length <= 6 ? 95 : 80;
+          const finalScore = Math.round((pScore * 0.3) + (memScore * 0.2) + (relScore * 0.2) + (confidence * 0.2) + (visualSimplicity * 0.1));
+
+          if (!val.hasCollision) {
+            validated.push({
+              id: `val_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              candidate: c,
+              checks: val.checks || [],
+              domains: val.domains || [],
+              pronunciationScore: pScore,
+              memorabilityScore: memScore,
+              relevanceScore: relScore,
+              uniquenessConfidence: confidence,
+              finalScore,
+              status: 'passed',
+              validatedAt: new Date().toISOString()
+            });
+          }
+        } catch {
+          // skip individual validation failures
         }
       }
 
@@ -114,8 +112,40 @@ export function AppContent() {
       await incrementRuns();
       setValidatedNames(validated);
       setCurrentTab('results');
+
+      if (user) {
+        try {
+          const projectId = `proj_${Date.now()}`;
+          const projectRef = doc(db, 'users', user.uid, 'projects', projectId);
+          await setDoc(projectRef, {
+            brief: JSON.parse(JSON.stringify(brief)),
+            names: validated.map(n => ({
+              id: n.id,
+              name: n.candidate.name,
+              originExplanation: n.candidate.originExplanation,
+              meaning: n.candidate.meaning,
+              finalScore: n.finalScore,
+              pronunciationScore: n.pronunciationScore,
+              memorabilityScore: n.memorabilityScore,
+              relevanceScore: n.relevanceScore,
+              uniquenessConfidence: n.uniquenessConfidence,
+              domains: n.domains,
+              checks: n.checks,
+              status: n.status,
+              validatedAt: n.validatedAt,
+              starred: false
+            })),
+            createdAt: new Date().toISOString(),
+            nameCount: validated.length
+          });
+          setActiveProjectId(projectId);
+        } catch (e) {
+          console.error('Auto-save to Firestore failed:', e);
+        }
+      }
     } catch (err) {
       console.error('Error generating names:', err);
+      setCurrentTab('new-project');
     }
   };
 
@@ -128,11 +158,19 @@ export function AppContent() {
     setCurrentTab('results');
   };
 
-  const handleSaveCandidate = (vn: ValidatedName) => {
-    if (savedCandidateIds.includes(vn.id)) {
-      setSavedCandidateIds(prev => prev.filter(id => id !== vn.id));
-    } else {
-      setSavedCandidateIds(prev => [...prev, vn.id]);
+  const handleStarToggle = (vn: ValidatedName) => {
+    const newStarred = starredIds.includes(vn.id)
+      ? starredIds.filter(id => id !== vn.id)
+      : [...starredIds, vn.id];
+    setStarredIds(newStarred);
+    if (user && activeProjectId) {
+      const projectRef = doc(db, 'users', user.uid, 'projects', activeProjectId);
+      setDoc(projectRef, {
+        names: validatedNames.map(n => ({
+          ...n,
+          starred: newStarred.includes(n.id)
+        }))
+      }, { merge: true }).catch(() => {});
     }
   };
 
@@ -152,7 +190,7 @@ export function AppContent() {
     try {
       const res = await fetch('/api/search/exact', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-gemini-key': profile?.customGeminiKey || '' },
         body: JSON.stringify({ candidateName: vn.candidate.name, strictnessMode: 'extreme' })
       });
       const data = await res.json();
@@ -163,40 +201,73 @@ export function AppContent() {
   };
 
   const handleGenerateSimilar = async (vn: ValidatedName) => {
+    const apiKey = profile?.customGeminiKey;
+    if (!apiKey) {
+      setShowLimitModal(true);
+      return;
+    }
+    setCurrentTab('running');
     try {
-      const res = await fetch('/api/candidates/similar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: vn.candidate.name,
-          brief: {
-            productType: vn.candidate.originExplanation,
-            description: vn.candidate.semanticConnection,
-            minimumLetters: 4,
-            maximumLetters: 8,
-            maximumSyllables: 3,
-            avoidTerms: []
-          }
-        })
-      });
-      const candidates = await res.json();
-      alert(`Generated ${candidates.length} similar candidates! Re-launching pipeline with similar criteria.`);
-      if (candidates.length > 0) {
-        handleStartNewProject({
-          productType: `Similar to ${vn.candidate.name}`,
-          description: vn.candidate.semanticConnection,
-          minimumLetters: 4,
-          maximumLetters: 8
-        });
+      const brief = currentBrief || {
+        productType: vn.candidate.originExplanation,
+        description: vn.candidate.semanticConnection || '',
+        audience: '',
+        industry: '',
+        personality: [],
+        meanings: [],
+        avoidTerms: [],
+        minimumLetters: 4,
+        maximumLetters: 8,
+        maximumSyllables: 3,
+        strictnessMode: 'moderate',
+        originExplanation: ''
+      };
+      const similar = await generateCandidates(apiKey, brief, 20, vn.candidate.name);
+      if (similar.length === 0) {
+        throw new Error('No similar candidates generated');
       }
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'x-gemini-key': apiKey
+      };
+      const validated: ValidatedName[] = [];
+      for (const c of similar) {
+        try {
+          const valRes = await fetch('/api/candidates/validate', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ name: c.name, brief, strictnessMode: brief.strictnessMode })
+          });
+          const val = await valRes.json();
+          const sCount = Math.max(1, c.name.toLowerCase().replace(/(?:[^laeiouy]|ed|es|e)$/i, '').replace(/^y/i, '').match(/[aeiouy]{1,2}/g)?.length || 1);
+          const pScore = Math.min(100, Math.max(60, 100 - (sCount * 5) - (c.name.length > 8 ? 10 : 0) - (/[^aeiouy]{3,}/i.test(c.name) ? 10 : 0) - (/(ough|eigh|psh|mn|cz|kn|gn|wr)/.test(c.name.toLowerCase()) ? 10 : 0)));
+          const memScore = Math.min(100, Math.max(60, 100 - (c.name.length * 3)));
+          const passedChecks = val.checks?.filter((ch: any) => ch.status === 'passed').length || 0;
+          const confidence = Math.min(95, Math.max(82, 85 + (passedChecks * 2)));
+          if (!val.hasCollision) {
+            validated.push({
+              id: `val_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              candidate: c,
+              checks: val.checks || [],
+              domains: val.domains || [],
+              pronunciationScore: pScore,
+              memorabilityScore: memScore,
+              relevanceScore: 80,
+              uniquenessConfidence: confidence,
+              finalScore: Math.round((pScore * 0.3) + (memScore * 0.2) + (80 * 0.2) + (confidence * 0.2) + ((c.name.length <= 6 ? 95 : 80) * 0.1)),
+              status: 'passed',
+              validatedAt: new Date().toISOString()
+            });
+          }
+        } catch { }
+      }
+      validated.sort((a, b) => b.finalScore - a.finalScore);
+      setValidatedNames(validated);
+      setCurrentTab('results');
     } catch (e) {
       console.error(e);
+      setCurrentTab('results');
     }
-  };
-
-  const handleExportReport = (vn: ValidatedName) => {
-    setReportCandidate(vn);
-    setCurrentTab('report');
   };
 
   const handleOpenSavedProject = (proj: NamingProject) => {
@@ -260,37 +331,26 @@ export function AppContent() {
             )}
 
             {currentTab === 'running' && (
-              activeRunId ? (
-                <LivePipelineView
-                  runId={activeRunId}
-                  onViewResults={handleViewResults}
-                  onCancelRun={handleCancelRun}
-                />
-              ) : (
-                <div className="p-12 text-center bg-zinc-900/60 border border-zinc-800 rounded-3xl space-y-4 max-w-xl mx-auto my-12">
-                  <h3 className="text-lg font-bold text-white">No Active Brand Generation Run</h3>
-                  <p className="text-xs text-zinc-400">Please create a new naming brief to start a live search generation.</p>
-                  <button
-                    onClick={handleStartNewProject}
-                    className="px-6 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-bold text-xs uppercase tracking-wider hover:bg-white"
-                  >
-                    Start New Naming Brief
-                  </button>
+              <div className="max-w-5xl mx-auto py-20 px-4 text-center space-y-6">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto animate-pulse">
+                  <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                 </div>
-              )
+                <h3 className="text-lg font-bold text-white">Generating Brand Names</h3>
+                <p className="text-sm text-zinc-400 max-w-md mx-auto">
+                  Using your Gemini API key to brainstorm names and check availability...
+                </p>
+              </div>
             )}
 
             {currentTab === 'results' && (
               <ResultsView
                 validatedNames={validatedNames || []}
-                onSaveCandidate={handleSaveCandidate}
-                onRejectCandidate={() => {}}
+                onStarToggle={handleStarToggle}
                 onRecheckCandidate={handleRecheckCandidate}
                 onGenerateSimilar={handleGenerateSimilar}
                 onCompareCandidate={handleCompareCandidate}
-                onExportReport={handleExportReport}
                 onOpenCompare={() => setCurrentTab('compare')}
-                savedCandidateIds={savedCandidateIds || []}
+                starredIds={starredIds || []}
                 comparedCandidateIds={(comparedCandidates || []).map(c => c?.id).filter(Boolean)}
               />
             )}
@@ -300,7 +360,7 @@ export function AppContent() {
                 comparedCandidates={comparedCandidates || []}
                 onRemoveFromCompare={(id) => setComparedCandidates(prev => prev.filter(c => c?.id !== id))}
                 onClearCompare={() => setComparedCandidates([])}
-                onSelectFavorite={(vn) => handleSaveCandidate(vn)}
+                onSelectFavorite={(vn) => handleStarToggle(vn)}
                 onGenerateSimilar={handleGenerateSimilar}
               />
             )}
@@ -310,26 +370,6 @@ export function AppContent() {
                 onOpenProject={handleOpenSavedProject}
                 onNewProject={() => handleStartNewProject()}
               />
-            )}
-
-            {currentTab === 'report' && (
-              reportCandidate ? (
-                <ValidationReportView
-                  validatedName={reportCandidate}
-                  onBack={() => setCurrentTab('results')}
-                />
-              ) : (
-                <div className="p-12 text-center bg-zinc-900/60 border border-zinc-800 rounded-3xl space-y-4 max-w-xl mx-auto my-12">
-                  <h3 className="text-lg font-bold text-white">No Brand Certificate Selected</h3>
-                  <p className="text-xs text-zinc-400">Select a validated name from your results dashboard to view or export its clearance certificate.</p>
-                  <button
-                    onClick={() => setCurrentTab('results')}
-                    className="px-6 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-bold text-xs uppercase tracking-wider hover:bg-white"
-                  >
-                    Back to Results
-                  </button>
-                </div>
-              )
             )}
 
             {currentTab === 'account' && <AccountView onOpenTour={handleOpenTour} />}
