@@ -109,7 +109,7 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
 
   const handleClose = () => {
     onClose();
-    localStorage.setItem('zeroname_tour_seen', 'true');
+    localStorage.setItem('findnames_tour_seen', 'true');
   };
 
   const handleNext = () => {

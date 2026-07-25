@@ -17,10 +17,10 @@ export interface UserProfile {
 }
 
 export function getDeviceId(): string {
-  let devId = localStorage.getItem('zeroname_device_id');
+  let devId = localStorage.getItem('findnames_device_id');
   if (!devId) {
     devId = 'dev_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
-    localStorage.setItem('zeroname_device_id', devId);
+    localStorage.setItem('findnames_device_id', devId);
   }
   return devId;
 }
@@ -30,9 +30,9 @@ export async function getUserProfile(uid: string, email?: string | null): Promis
     uid,
     email: email || null,
     plan: 'free',
-    runsUsed: Number(localStorage.getItem(`zeroname_runs_${uid}`) || 0),
-    customGeminiKey: localStorage.getItem(`zeroname_gemini_key_${uid}`) || '',
-    tourSeen: localStorage.getItem(`zeroname_tour_seen_${uid}`) === 'true',
+    runsUsed: Number(localStorage.getItem(`findnames_runs_${uid}`) || 0),
+    customGeminiKey: localStorage.getItem(`findnames_gemini_key_${uid}`) || '',
+    tourSeen: localStorage.getItem(`findnames_tour_seen_${uid}`) === 'true',
     sessions: []
   };
 
@@ -58,7 +58,7 @@ export async function getUserProfile(uid: string, email?: string | null): Promis
   } catch (err) {
     console.warn('Firestore user profile lookup fallback to local storage:', err);
     // Check local storage only as offline fallback
-    const localPlan = localStorage.getItem(`zeroname_plan_${uid}`);
+    const localPlan = localStorage.getItem(`findnames_plan_${uid}`);
     if (localPlan === 'pro') {
       defaultProfile.plan = 'pro';
     }
@@ -74,10 +74,10 @@ export async function registerDeviceSession(uid: string, userAgentStr: string): 
 
 export async function updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<void> {
   // Sync to localStorage
-  if (updates.plan) localStorage.setItem(`zeroname_plan_${uid}`, updates.plan);
-  if (typeof updates.runsUsed === 'number') localStorage.setItem(`zeroname_runs_${uid}`, String(updates.runsUsed));
-  if (typeof updates.customGeminiKey === 'string') localStorage.setItem(`zeroname_gemini_key_${uid}`, updates.customGeminiKey);
-  if (typeof updates.tourSeen === 'boolean') localStorage.setItem(`zeroname_tour_seen_${uid}`, String(updates.tourSeen));
+  if (updates.plan) localStorage.setItem(`findnames_plan_${uid}`, updates.plan);
+  if (typeof updates.runsUsed === 'number') localStorage.setItem(`findnames_runs_${uid}`, String(updates.runsUsed));
+  if (typeof updates.customGeminiKey === 'string') localStorage.setItem(`findnames_gemini_key_${uid}`, updates.customGeminiKey);
+  if (typeof updates.tourSeen === 'boolean') localStorage.setItem(`findnames_tour_seen_${uid}`, String(updates.tourSeen));
 
   // Sync to Firestore
   try {

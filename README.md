@@ -1,20 +1,30 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Find Names for My Brand
 
-# Run and deploy your AI Studio app
+AI-powered brand & product name generator that displays candidate names only after passing online collision checks. Real-time web search and domain availability verification before you ever see a name.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/1ea5b0f3-74fc-4ffc-8d3b-6e0694294b3c
+- **Collision-Guarded Pipeline**: Every generated name is checked against live search engines and domain registries
+- **BYOK (Bring Your Own Key)**: Use your free Gemini API key — no subscriptions, no paywalls
+- **Real-time Streaming**: Watch the verification pipeline as it runs
+- **PDF Clearance Certificates**: Download validation reports for shortlisted names
+- **100% Open Source**: MIT License
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Copy `.env.example` to `.env` and set `GEMINI_API_KEY`
+3. Copy `firebase-applet-config.example.json` to `firebase-applet-config.json` and fill in your Firebase config
+4. Run the app:
    `npm run dev`
+
+## Tech Stack
+
+- React 19 + TypeScript
+- Vite + Tailwind CSS v4
+- Express server (Vite middleware in dev)
+- Google Gemini AI (Google Gen AI SDK)
+- Firebase Auth + Firestore

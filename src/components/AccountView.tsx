@@ -256,7 +256,7 @@ export const AccountView: React.FC<AccountViewProps> = ({ onOpenTour }) => {
           </div>
 
           <a
-            href="https://github.com/JSNrepo/ZeroName"
+            href="https://github.com/JSNrepo/find-names-for-my-brand"
             target="_blank"
             rel="noreferrer"
             className="px-5 py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-extrabold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2 shrink-0 min-h-[40px]"

@@ -122,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(prev => prev ? { ...prev, tourSeen: true } : null);
   };
 
-  const isAdmin = Boolean(user?.email && (user.email.includes('admin') || user.email === 'binotsuke2006@gmail.com'));
+  const isAdmin = Boolean(user?.email && user.email.includes('admin'));
 
   return (
     <AuthContext.Provider

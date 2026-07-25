@@ -120,7 +120,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartNewProject, onS
 
           <div className="flex items-center gap-3">
             <a
-              href="https://github.com/JSNrepo/ZeroName"
+              href="https://github.com/JSNrepo/find-names-for-my-brand"
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-amber-400/80 text-zinc-200 hover:text-white text-xs font-bold transition-all shadow-sm"
@@ -183,7 +183,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartNewProject, onS
           </button>
 
           <a
-            href="https://github.com/JSNrepo/ZeroName"
+            href="https://github.com/JSNrepo/find-names-for-my-brand"
             target="_blank"
             rel="noreferrer"
             className="w-full sm:w-auto px-8 py-4 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 font-bold text-xs transition-all flex items-center justify-center gap-2 min-h-[50px] shadow-sm"
@@ -458,7 +458,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartNewProject, onS
             </button>
 
             <a
-              href="https://github.com/JSNrepo/ZeroName"
+              href="https://github.com/JSNrepo/find-names-for-my-brand"
               target="_blank"
               rel="noreferrer"
               className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-zinc-900 border border-zinc-700/80 text-white font-bold text-xs uppercase tracking-wider hover:bg-zinc-800 transition-all inline-flex items-center justify-center gap-2 shadow-sm min-h-[50px]"
@@ -493,7 +493,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartNewProject, onS
               <li><button onClick={() => handleAction()} className="hover:text-white transition-colors">Start Brand Brief</button></li>
               <li><button onClick={onSeeMethodology} className="hover:text-white transition-colors">Validation Protocol</button></li>
               <li>
-                <a href="https://github.com/JSNrepo/ZeroName" target="_blank" rel="noreferrer" className="hover:text-white transition-colors inline-flex items-center gap-1">
+                <a href="https://github.com/JSNrepo/find-names-for-my-brand" target="_blank" rel="noreferrer" className="hover:text-white transition-colors inline-flex items-center gap-1">
                   <span>GitHub Repository</span>
                   <ExternalLink className="w-3 h-3 text-zinc-500" />
                 </a>

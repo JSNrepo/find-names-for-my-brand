@@ -35,9 +35,9 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, onNew
             className="flex items-center gap-2 text-base sm:text-lg font-bold tracking-tight hover:opacity-90 transition-opacity shrink-0"
           >
             <div className="w-8 h-8 rounded-lg bg-zinc-100 text-zinc-950 flex items-center justify-center font-black text-base shadow-sm">
-              0
+              F
             </div>
-            <span>Zero<span className="text-zinc-400 font-normal">Name</span></span>
+            <span>Find<span className="text-zinc-400 font-normal">Names</span></span>
             <span className="hidden sm:inline-block text-[10px] uppercase tracking-wider bg-zinc-900 border border-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full font-medium">
               Collision Guarded
             </span>
@@ -103,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({ currentTab, setCurrentTab, onNew
         <div className="flex items-center gap-2 sm:gap-3">
           <a
             id="btn-github-star"
-            href="https://github.com/JSNrepo/ZeroName"
+            href="https://github.com/JSNrepo/find-names-for-my-brand"
             target="_blank"
             rel="noreferrer"
             className="hidden sm:flex items-center gap-1.5 bg-zinc-900 border border-zinc-700/80 hover:border-amber-400/80 text-zinc-100 hover:text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-sm shrink-0"
