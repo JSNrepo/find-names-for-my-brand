@@ -31,21 +31,8 @@ export async function generateCandidates(
   const personalityStr = brief.personality.join(', ') || 'modern, professional';
   const meaningsStr = brief.meanings.join(', ') || 'readiness, progress';
 
-  const creativeTechniques = `
-- NEO-CLASSICAL: Greek/Latin roots fused unconventionally (Aetheron, Velaris, Crystalis)
-- METAPHOR + ABSTRACTION: Evocative concepts (Ember, Pivot, Apex, Cipher, Vellum)
-- PORTMANTEAU: Two meaningful words fused (Codex + Apex = Codexpex, Bright + Harbor = Brighter)
-- PHONETIC INVENTIONS: Pure sound sculptures with no dictionary meaning (Zylara, Noven, Quixos)
-- BIOMIMICRY: Nature-inspired (Sparrow, Canopy, Drift, Pollen, Mycelium)
-- ARCHITECTURAL: Structural terms reimagined (Keystone, Facet, Spire, Strata, Axis)
-- CELESTIAL: Stars/space metaphors (Nova, Solara, Orion, Lyra, Eclipse)
-- MATERIAL: Fabric/mineral names (Silica, Velvox, Brassia, Chroma, Lumen)
-- COMPOUND ABSTRACT: Two short evocative words (BrightField, NextPulse, TrueNorth, ClearState)
-- CULTURAL FUSION: Blend roots from 2+ languages (Mandarin + Latin = Luminao)
-`;
-
   const prompt = likedName
-    ? `You are a world-class naming strategist. Generate ${count} fresh, creative brand names for this project.
+    ? `You are a creative naming expert. Generate ${count} original brand names for:
 
 PROJECT: ${brief.productType}
 DESCRIPTION: ${brief.description}
@@ -54,19 +41,20 @@ INDUSTRY: ${brief.industry}
 VIBE: ${personalityStr}
 THEMES: ${meaningsStr}
 
-The user liked "${likedName}". Generate names in a similar creative spirit but using completely different root words and structures. No lazy letter swaps.
+The user liked "${likedName}". Create names with a similar creative spirit but using completely different roots and structures. No lazy letter swaps.
 
-CREATIVE TOOLKIT (use these techniques, mix them up):${creativeTechniques}
 RULES:
 - Length: ${brief.minimumLetters}-${brief.maximumLetters} chars, max ${brief.maximumSyllables} syllables
 - Easy global pronunciation
-- Avoid dictionary words
-- No: ${avoidTermsStr}
-- No: -ify, -ly, -io, -ai, -labs, -hub suffixes
-- No: obvious famous brand clones
+- Not standard dictionary words
+- Avoid: ${avoidTermsStr}
+- Avoid: -ify, -ly, -io, -ai, -labs, -hub suffixes
+- Avoid: obvious famous brand clones
 
-Return JSON array of candidate objects.`
-    : `You are an award-winning naming strategist. Brainstorm ${count} bold, original brand names for:
+Each name should be unique in structure and sound. Don't repeat patterns across the batch.
+
+Return JSON array.`
+    : `You are a creative naming expert. Brainstorm ${count} original brand names for:
 
 PROJECT: ${brief.productType}
 DESCRIPTION: ${brief.description}
@@ -75,7 +63,6 @@ INDUSTRY: ${brief.industry}
 VIBE: ${personalityStr}
 THEMES: ${meaningsStr}
 
-CREATIVE TOOLKIT (mix these techniques across the batch):${creativeTechniques}
 RULES:
 - Length: ${brief.minimumLetters}-${brief.maximumLetters} chars, max ${brief.maximumSyllables} syllables
 - Globally easy to pronounce
@@ -84,9 +71,9 @@ RULES:
 - Avoid: -ify, -ly, -io, -ai, -labs, -hub suffixes
 - Avoid: obvious famous brand clones
 
-Generate maximum diversity in structure, sound, and technique across all ${count} names. Don't repeat patterns. Wild creativity encouraged as long as it meets the rules.
+Generate maximum diversity. Every name should feel distinct — different syllable patterns, different sounds, different creative approaches. Wild creativity encouraged.
 
-Return JSON array of candidate objects.`;
+Return JSON array.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3.6-flash',
